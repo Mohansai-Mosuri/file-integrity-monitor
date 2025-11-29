@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Integrity Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-input-button {
+            cursor: pointer;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 30px;
+            opacity: 0;
+            transition: opacity 0.5s, visibility 0.5s, bottom 0.5s;
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen">
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl w-full">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">File Integrity Monitor</h1>
+            <p class="text-gray-600 mt-2">Detect unauthorized changes to your files by comparing file hashes against a trusted baseline.</p>
+        </header>
+        <main class="bg-white rounded-lg shadow-xl p-6 md:p-8">
+            <div class="mb-8 border-b pb-6">
+                <h2 class="text-2xl font-semibold mb-2 flex items-center">
+                    <span class="bg-indigo-500 text-white rounded-full h-8 w-8 flex items-center justify-center mr-3">1</span>
+                    Create Baseline
+                </h2>
+                <p class="text-gray-600 mb-4">Select a directory to create a secure baseline. We'll calculate a unique hash (SHA-256) for every file in it.</p>
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <label for="directory-picker-baseline" class="file-input-button w-full sm:w-auto flex-grow text-center bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-indigo-700 transition duration-300 shadow-md">
+                        Select Directory to Create Baseline
+                    </label>
+                    <input type="file" id="directory-picker-baseline" webkitdirectory directory multiple class="hidden">
+                    <button id="download-baseline-btn" class="w-full sm:w-auto bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-lg hover:bg-gray-300 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Download Baseline.json
+                    </button>
+                </div>
+                <div id="baseline-status" class="mt-4 text-sm text-gray-500"></div>
+            </div>
+            <div>
+                <h2 class="text-2xl font-semibold mb-2 flex items-center">
+                    <span class="bg-green-500 text-white rounded-full h-8 w-8 flex items-center justify-center mr-3">2</span>
+                    Run Integrity Check
+                </h2>
+                <p class="text-gray-600 mb-4">Upload your baseline file and select the same directory again to check for any changes.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="baseline-uploader" class="file-input-button block w-full text-center bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-gray-700 transition duration-300 shadow-md">
+                            Upload Baseline File
+                        </label>
+                        <input type="file" id="baseline-uploader" accept=".json" class="hidden">
+                        <p id="baseline-upload-status" class="text-sm text-gray-500 mt-2 text-center"></p>
+                    </div>
+                    <div>
+                        <label for="directory-picker-check" class="file-input-button block w-full text-center bg-green-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-700 transition duration-300 shadow-md">
+                            Select Directory to Check
+                        </label>
+                        <input type="file" id="directory-picker-check" webkitdirectory directory multiple class="hidden">
+                        <p id="check-dir-status" class="text-sm text-gray-500 mt-2 text-center"></p>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-center">
+                     <button id="run-check-btn" class="w-full md:w-1/2 bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition duration-300 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Run Integrity Check
+                    </button>
+                </div>
+            </div>
+            <div id="results-section" class="mt-8 pt-6 border-t hidden">
+                <h2 class="text-2xl font-semibold mb-4 text-center">Scan Results</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <h3 class="font-bold text-yellow-800 text-lg mb-2">Modified Files (<span id="modified-count">0</span>)</h3>
+                        <ul id="modified-files" class="text-sm text-yellow-700 space-y-1 max-h-48 overflow-y-auto"></ul>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <h3 class="font-bold text-green-800 text-lg mb-2">New Files (<span id="new-count">0</span>)</h3>
+                        <ul id="new-files" class="text-sm text-green-700 space-y-1 max-h-48 overflow-y-auto"></ul>
+                    </div>
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <h3 class="font-bold text-red-800 text-lg mb-2">Deleted Files (<span id="deleted-count">0</span>)</h3>
+                        <ul id="deleted-files" class="text-sm text-red-700 space-y-1 max-h-48 overflow-y-auto"></ul>
+                    </div>
+                </div>
+                 <div id="no-changes" class="hidden text-center text-gray-600 mt-6 bg-gray-50 p-4 rounded-lg">
+                    <p class="font-semibold text-lg">✅ No changes detected. All files are intact.</p>
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center text-gray-500 mt-8 text-sm">
+            <p>Developed for educational purposes. All processing is done locally in your browser.</p>
+        </footer>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script>
+        let baselineData = null;
+        let checkFilesList = null;
+        let baselineFileList = null;
+        let uploadedBaselineContent = null;
+        const baselineDirPicker = document.getElementById('directory-picker-baseline');
+        const downloadBaselineBtn = document.getElementById('download-baseline-btn');
+        const baselineStatus = document.getElementById('baseline-status');
+        const baselineUploader = document.getElementById('baseline-uploader');
+        const baselineUploadStatus = document.getElementById('baseline-upload-status');
+        const checkDirPicker = document.getElementById('directory-picker-check');
+        const checkDirStatus = document.getElementById('check-dir-status');
+        const runCheckBtn = document.getElementById('run-check-btn');
+        const resultsSection = document.getElementById('results-section');
+        const modifiedCount = document.getElementById('modified-count');
+        const newCount = document.getElementById('new-count');
+        const deletedCount = document.getElementById('deleted-count');
+        const modifiedFilesList = document.getElementById('modified-files');
+        const newFilesList = document.getElementById('new-files');
+        const deletedFilesList = document.getElementById('deleted-files');
+        const noChangesMessage = document.getElementById('no-changes');
+        const toast = document.getElementById('toast');
+        async function calculateHash(file) {
+            const buffer = await file.arrayBuffer();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+        function updateRunCheckButtonState() {
+            if (uploadedBaselineContent && checkFilesList) {
+                runCheckBtn.disabled = false;
+            } else {
+                runCheckBtn.disabled = true;
+            }
+        }
+        baselineDirPicker.addEventListener('change', async (event) => {
+            const files = event.target.files;
+            if (files.length === 0) return;
+            baselineFileList = files;
+            baselineStatus.textContent = `Processing ${files.length} files...`;
+            showToast('Generating baseline...');
+            const hashes = {};
+            for (const file of files) {
+                try {
+                    const hash = await calculateHash(file);
+                    hashes[file.webkitRelativePath] = hash;
+                } catch (error) {
+                    console.error(`Could not hash file: ${file.name}`, error);
+                    hashes[file.webkitRelativePath] = 'error';
+                }
+            }
+            baselineData = {
+                createdAt: new Date().toISOString(),
+                fileCount: files.length,
+                hashes: hashes
+            };           
+            baselineStatus.textContent = `Baseline created for ${files.length} files. Ready to download.`;
+            downloadBaselineBtn.disabled = false;
+            showToast('Baseline created successfully!');
+        });
+        downloadBaselineBtn.addEventListener('click', () => {
+            if (!baselineData) return;
+            const blob = new Blob([JSON.stringify(baselineData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'baseline.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Baseline file downloaded.');
+        });
+        baselineUploader.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    uploadedBaselineContent = JSON.parse(e.target.result);
+                    // Basic validation
+                    if (uploadedBaselineContent.hashes && uploadedBaselineContent.createdAt) {
+                       baselineUploadStatus.textContent = `Loaded '${file.name}' with ${Object.keys(uploadedBaselineContent.hashes).length} files.`;
+                       showToast('Baseline file loaded.');
+                    } else {
+                       throw new Error("Invalid baseline file format.");
+                    }
+                } catch (error) {
+                    uploadedBaselineContent = null;
+                    baselineUploadStatus.textContent = 'Error: Invalid JSON file.';
+                    showToast('Error: Invalid baseline file.');
+                    console.error(error);
+                }
+                 updateRunCheckButtonState();
+            };
+            reader.onerror = () => {
+                 uploadedBaselineContent = null;
+                 baselineUploadStatus.textContent = 'Error reading file.';
+                 showToast('Error reading baseline file.');
+                 updateRunCheckButtonState();
+            };
+            reader.readAsText(file);
+        });
+        checkDirPicker.addEventListener('change', (event) => {
+            checkFilesList = event.target.files;
+            if (checkFilesList.length > 0) {
+                checkDirStatus.textContent = `${checkFilesList.length} files selected for checking.`;
+            } else {
+                checkDirStatus.textContent = `No files selected.`;
+            }
+            updateRunCheckButtonState();
+        });
+        runCheckBtn.addEventListener('click', async () => {
+            if (!uploadedBaselineContent || !checkFilesList) {
+                showToast("Please provide both baseline and directory.");
+                return;
+            }
+            showToast("Running integrity check...");
+            runCheckBtn.disabled = true;
+            runCheckBtn.textContent = "Checking...";
+
+            const baselineHashes = uploadedBaselineContent.hashes;
+            const currentHashes = {};           
+            for (const file of checkFilesList) {
+                try {
+                    const hash = await calculateHash(file);
+                    currentHashes[file.webkitRelativePath] = hash;
+                } catch(e) {
+                    currentHashes[file.webkitRelativePath] = 'error_hashing_current';
+                }
+            }
+            const modified = [];
+            const added = [];
+            const deleted = Object.keys(baselineHashes);
+            for (const path in currentHashes) {
+                const deletedIndex = deleted.indexOf(path);
+                if (deletedIndex > -1) {
+                    deleted.splice(deletedIndex, 1);
+                    if (baselineHashes[path] !== currentHashes[path]) {
+                        modified.push(path);
+                    }
+                } else {
+                    added.push(path);
+                }
+            }
+                        renderResults(modified, added, deleted);
+
+            runCheckBtn.disabled = false;
+            runCheckBtn.textContent = "Run Integrity Check";
+            showToast("Check complete!");
+        });
+        function renderResults(modified, added, deleted) {
+            modifiedFilesList.innerHTML = '';
+            newFilesList.innerHTML = '';
+            deletedFilesList.innerHTML = '';
+            modifiedCount.textContent = modified.length;
+            newCount.textContent = added.length;
+            deletedCount.textContent = deleted.length;
+            modified.forEach(path => {
+                const li = document.createElement('li');
+                li.textContent = path;
+                modifiedFilesList.appendChild(li);
+            });
+            added.forEach(path => {
+                const li = document.createElement('li');
+                li.textContent = path;
+                newFilesList.appendChild(li);
+            });
+            deleted.forEach(path => {
+                const li = document.createElement('li');
+                li.textContent = path;
+                deletedFilesList.appendChild(li);
+            });
+            resultsSection.classList.remove('hidden');
+            if (modified.length === 0 && added.length === 0 && deleted.length === 0) {
+                noChangesMessage.classList.remove('hidden');
+            } else {
+                noChangesMessage.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
